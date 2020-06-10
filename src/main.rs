@@ -51,13 +51,27 @@ pub fn pat_contributes(r#type: &types::Type, pattern: &pat::Pattern) -> bool {
 /// the specified `type`, contributes to the computation of whether or not the
 /// enclosing inspect statement is exhaustive.
 pub fn case_contributes(
-    r#type: types::Type,
-    inspect_expression_case: pat::InspectExpressionCase,
+    r#type: &types::Type,
+    inspect_expression_case: &pat::InspectExpressionCase,
 ) -> bool {
     if inspect_expression_case.guard.is_some() {
         return false;
     }
     return pat_contributes(&r#type, &inspect_expression_case.pattern);
+}
+
+/// Return patterns within the specified `cases`, all assumed to have the
+/// specified `type`, that contribute to the computation of whether or not the
+/// enclosing inspect statement is exhaustive.
+pub fn filter_noncontributors(
+    r#type: types::Type,
+    cases: &Vec<pat::InspectExpressionCase>,
+) -> Vec<pat::Pattern> {
+    return cases
+        .iter()
+        .filter(|c| case_contributes(&r#type, c))
+        .map(|c| c.pattern.clone())
+        .collect();
 }
 
 #[cfg(test)]
@@ -66,16 +80,34 @@ mod tests {
     use std::rc::Rc;
 
     #[test]
-    fn test_type_construction() {
-        let _ty = types::Type::Primitive;
-        let _ty2 = types::Type::Class(types::Class {
-            derived_eq: true,
-            fields: vec![],
-        });
-        let _r = deep_derived_eq(&types::Class {
-            derived_eq: true,
-            fields: vec![],
-        });
+    fn test_filter_noncontributors() {
+        // filter_noncontributors( μ⟦ bool ⟧, [] ) ⇒ []
+        let ty = types::Type::Primitive(types::Primitive::Bool);
+        let cases: Vec<pat::InspectExpressionCase> = Vec::new();
+        assert_eq!(filter_noncontributors(ty, &cases), Vec::new());
+
+        // filter_noncontributors( μ⟦ bool ⟧, [μ⟦ _ ⟧] ) ⇒ [μ⟦ _ ⟧]
+        let ty = types::Type::Primitive(types::Primitive::Bool);
+        let cases = vec![pat::InspectExpressionCase {
+            pattern: pat::Pattern::Wildcard,
+            guard: None,
+        }];
+        assert_eq!(
+            filter_noncontributors(ty, &cases),
+            vec![pat::Pattern::Wildcard]
+        );
+
+        // filter_noncontributors( μ⟦ bool ⟧, [μ⟦ _ if (g()) ⟧] ) ⇒ [μ⟦ _ ⟧]
+        let ty = types::Type::Primitive(types::Primitive::Bool);
+        let cases = vec![pat::InspectExpressionCase {
+            pattern: pat::Pattern::Wildcard,
+            guard: Some(pat::Guard{}),
+        }];
+        assert_eq!(
+            filter_noncontributors(ty, &cases),
+            vec![]
+        );
+
     }
 
     #[test]
@@ -229,8 +261,8 @@ mod tests {
         // Check guard case
         assert_eq!(
             case_contributes(
-                types::Type::Primitive(types::Primitive::Bool),
-                pat::InspectExpressionCase {
+                &types::Type::Primitive(types::Primitive::Bool),
+                &pat::InspectExpressionCase {
                     pattern: pat::Pattern::ConstExpression(pat::ConstExpression::Other),
                     guard: Some(pat::Guard {})
                 }
@@ -240,8 +272,8 @@ mod tests {
         // Check no-guard case 1
         assert_eq!(
             case_contributes(
-                types::Type::Primitive(types::Primitive::Bool),
-                pat::InspectExpressionCase {
+                &types::Type::Primitive(types::Primitive::Bool),
+                &pat::InspectExpressionCase {
                     pattern: pat::Pattern::ConstExpression(pat::ConstExpression::Other),
                     guard: None
                 }
@@ -251,11 +283,11 @@ mod tests {
         // Check no-guard case 2
         assert_eq!(
             case_contributes(
-                types::Type::Class(types::Class {
+                &types::Type::Class(types::Class {
                     derived_eq: false,
                     fields: vec![],
                 }),
-                pat::InspectExpressionCase {
+                &pat::InspectExpressionCase {
                     pattern: pat::Pattern::ConstExpression(pat::ConstExpression::Other),
                     guard: None
                 }

@@ -1,6 +1,6 @@
 # `exhaustiveness_checking`
 
-**PURPOSE:** Provide exhaustivness checking algorithms for C++ Pattern Matching
+**PURPOSE:** Provide exhaustiveness checking algorithms for C++ Pattern Matching.
 
 ## Description
 
@@ -17,7 +17,6 @@ algorithms.
 
 ## TODO
 
-- Create a data structure that represents filtered-out, non-contributing patterns.
-- Write a function that populates that.
 - Create the exhaustiveness checking function.
-- Put this work on github.
+- Extend `pat_contributes` to filter out `int` primitive literals. E.g.
+  `pat_contributes( μ⟦int⟧, μ⟦1⟧) ⇒ false`.
