@@ -74,6 +74,49 @@ pub fn filter_noncontributors(
         .collect();
 }
 
+/// Return 'true' if the specified 'type' is inhabited by exactly one value.
+pub fn is_monotype(r#type: &types::Type) -> bool {
+    return match r#type {
+        types::Type::Class(types::Class {
+            derived_eq: _,
+            fields: flds,
+        }) if flds.is_empty() => true,
+        types::Type::Class(types::Class {
+            derived_eq: _,
+            fields: flds,
+        }) if flds.len() == 1 => is_monotype(&flds[0]),
+        _ => false,
+    };
+}
+
+/// Return 'true' if there exists a value of the specified `type` that the
+/// specified 'pattern' matches that is not matched by the specified
+/// 'pattern_matrix' and 'false' otherwise.
+pub fn useful(
+    r#type: &types::Type,
+    pattern_matrix: &Vec<pat::Pattern>,
+    _pattern: &pat::Pattern,
+) -> bool {
+    if pattern_matrix.is_empty() {
+        // Base case where pattern matrix is empty
+        return true;
+    }
+
+    // Base case where the pattern matrix is non-empty and the type is a
+    // monotype.
+    if is_monotype( r#type ) {
+        return false;
+    }
+
+    unimplemented!();
+}
+
+/// Return 'true' if the specified 'patterns' form an exhaustive set for the
+/// specified 'type' and 'false' otherwise.
+pub fn is_exhaustive(_type: &types::Type, _patterns: &Vec<pat::Pattern>) -> bool {
+    unimplemented!();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,13 +144,9 @@ mod tests {
         let ty = types::Type::Primitive(types::Primitive::Bool);
         let cases = vec![pat::InspectExpressionCase {
             pattern: pat::Pattern::Wildcard,
-            guard: Some(pat::Guard{}),
+            guard: Some(pat::Guard {}),
         }];
-        assert_eq!(
-            filter_noncontributors(ty, &cases),
-            vec![]
-        );
-
+        assert_eq!(filter_noncontributors(ty, &cases), vec![]);
     }
 
     #[test]
