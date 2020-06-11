@@ -21,19 +21,9 @@ pub fn pat_contributes(r#type: &types::Type, pattern: &pat::Pattern) -> bool {
         (_, pat::Pattern::Wildcard) => true,
         (types::Type::Primitive(_), _) => true,
         (
-            types::Type::Class(types::Class {
-                derived_eq: true,
-                fields: _,
-            }),
+            types::Type::Class(c),
             pat::Pattern::ConstExpression(_),
-        ) => true,
-        (
-            types::Type::Class(types::Class {
-                derived_eq: false,
-                fields: _,
-            }),
-            pat::Pattern::ConstExpression(_),
-        ) => false,
+        ) => deep_derived_eq(c),
         (
             types::Type::Class(types::Class {
                 derived_eq: _,
@@ -43,7 +33,7 @@ pub fn pat_contributes(r#type: &types::Type, pattern: &pat::Pattern) -> bool {
         ) => types
             .iter()
             .zip(pats.iter())
-            .all(|(t, p)| pat_contributes(t, p)),
+            .all(|(t, p)| pat_contributes(t, p)), // TODO: should additionally filter out ints with literals
     };
 }
 
@@ -84,7 +74,7 @@ pub fn is_monotype(r#type: &types::Type) -> bool {
         types::Type::Class(types::Class {
             derived_eq: _,
             fields: flds,
-        }) if flds.len() == 1 => is_monotype(&flds[0]),
+        }) if flds.len() == 1 => is_monotype(&flds[0]), // TODO: Should look for all monotype fields
         _ => false,
     };
 }
@@ -104,7 +94,7 @@ pub fn useful(
 
     // Base case where the pattern matrix is non-empty and the type is a
     // monotype.
-    if is_monotype( r#type ) {
+    if is_monotype(r#type) {
         return false;
     }
 
@@ -242,6 +232,32 @@ mod tests {
                 &pat::Pattern::Wildcard,
             ),
             true
+        );
+
+        // Verify that matching a constant expression for a class without deep derived equality
+        // (but with derived equality) doesn't contribute to exhaustiveness. Note that class 'd'
+        // below has derived equality, but not deep derived equality.
+        //
+        // ```c++
+        // class c { bool operator==(const c&) { return true; } };
+        // class d { C c; bool operator==(const d&) = default; };
+        // ```
+        // pat_contributes( μ⟦d⟧, μ⟦d()⟧ ) ⇒ false
+
+        let c = Rc::new(types::Type::Class(types::Class {
+            derived_eq: false,
+            fields: vec![],
+        }));
+        let d = Rc::new(types::Type::Class(types::Class {
+            derived_eq: true,
+            fields: vec![c.clone()],
+        }));
+        assert_eq!(
+            pat_contributes(
+                &d,
+                &pat::Pattern::ConstExpression(pat::ConstExpression::Other)
+            ),
+            false
         );
 
         // ```c++
