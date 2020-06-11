@@ -20,10 +20,7 @@ pub fn pat_contributes(r#type: &types::Type, pattern: &pat::Pattern) -> bool {
     return match (r#type, pattern) {
         (_, pat::Pattern::Wildcard) => true,
         (types::Type::Primitive(_), _) => true,
-        (
-            types::Type::Class(c),
-            pat::Pattern::ConstExpression(_),
-        ) => deep_derived_eq(c),
+        (types::Type::Class(c), pat::Pattern::ConstExpression(_)) => deep_derived_eq(c),
         (
             types::Type::Class(types::Class {
                 derived_eq: _,
