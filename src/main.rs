@@ -19,6 +19,7 @@ pub fn deep_derived_eq(class_type: &types::Class) -> bool {
 pub fn pat_contributes(r#type: &types::Type, pattern: &pat::Pattern) -> bool {
     return match (r#type, pattern) {
         (_, pat::Pattern::Wildcard) => true,
+        (types::Type::Primitive(types::Primitive::Int), pat::Pattern::ConstExpression(_)) => false,
         (types::Type::Primitive(_), _) => true,
         (types::Type::Class(c), pat::Pattern::ConstExpression(_)) => deep_derived_eq(c),
         (
@@ -30,7 +31,7 @@ pub fn pat_contributes(r#type: &types::Type, pattern: &pat::Pattern) -> bool {
         ) => types
             .iter()
             .zip(pats.iter())
-            .all(|(t, p)| pat_contributes(t, p)), // TODO: should additionally filter out ints with literals
+            .all(|(t, p)| pat_contributes(t, p)),
     };
 }
 
@@ -192,6 +193,13 @@ mod tests {
         );
         assert_eq!(
             pat_contributes(
+                &types::Type::Primitive(types::Primitive::Int),
+                &pat::Pattern::ConstExpression(pat::ConstExpression::Other),
+            ),
+            false
+        );
+        assert_eq!(
+            pat_contributes(
                 &types::Type::Class(types::Class {
                     derived_eq: true,
                     fields: vec![]
@@ -258,16 +266,16 @@ mod tests {
         );
 
         // ```c++
-        // class c { int i; int j; };
-        // constexpr c c_val{1,2};
+        // class c { bool i; bool j; };
+        // constexpr c c_val{true,false};
         // class d { C c; bool b; };
         // ```
 
         let c = Rc::new(types::Type::Class(types::Class {
             derived_eq: false,
             fields: vec![
-                Rc::new(types::Type::Primitive(types::Primitive::Int)),
-                Rc::new(types::Type::Primitive(types::Primitive::Int)),
+                Rc::new(types::Type::Primitive(types::Primitive::Bool)),
+                Rc::new(types::Type::Primitive(types::Primitive::Bool)),
             ],
         }));
 
@@ -297,12 +305,12 @@ mod tests {
         ]);
         assert_eq!(pat_contributes(&d, &pat2), false);
 
-        // let pat3 = μ⟦[[2,3], true]⟧
+        // let pat3 = μ⟦[[true,false], true]⟧
         // pat_contributes( μ⟦d⟧, pat3 ) ⇒  true
         let pat3 = pat::Pattern::StructuredBinding(vec![
             pat::Pattern::StructuredBinding(vec![
-                pat::Pattern::ConstExpression(pat::ConstExpression::Num(2)),
-                pat::Pattern::ConstExpression(pat::ConstExpression::Num(3)),
+                pat::Pattern::ConstExpression(pat::ConstExpression::True),
+                pat::Pattern::ConstExpression(pat::ConstExpression::False),
             ]),
             pat::Pattern::ConstExpression(pat::ConstExpression::True),
         ]);
