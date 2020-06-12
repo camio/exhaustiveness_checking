@@ -68,11 +68,7 @@ pub fn is_monotype(r#type: &types::Type) -> bool {
         types::Type::Class(types::Class {
             derived_eq: _,
             fields: flds,
-        }) if flds.is_empty() => true,
-        types::Type::Class(types::Class {
-            derived_eq: _,
-            fields: flds,
-        }) if flds.len() == 1 => is_monotype(&flds[0]), // TODO: Should look for all monotype fields
+        }) => flds.iter().all(|t| is_monotype(&**t)),
         _ => false,
     };
 }
@@ -354,6 +350,52 @@ mod tests {
             ),
             false
         );
+    }
+    #[test]
+    fn test_is_monotype() {
+        assert_eq!(
+            is_monotype(&types::Type::Primitive(types::Primitive::Bool)),
+            false
+        );
+        //```c++
+        //class c {};
+        //```
+        let c = types::Type::Class(types::Class {
+            derived_eq: false,
+            fields: Vec::new(),
+        });
+        assert_eq!(is_monotype(&c), true);
+
+        //```c++
+        //class d { c c1; };
+        //```
+        let d = types::Type::Class(types::Class {
+            derived_eq: false,
+            fields: vec![Rc::new(c.clone())],
+        });
+
+        assert_eq!(is_monotype(&d), true);
+
+        //```c++
+        //class e { c c1; int i; };
+        //```
+        let e = types::Type::Class(types::Class {
+            derived_eq: false,
+            fields: vec![
+                Rc::new(c.clone()),
+                Rc::new(types::Type::Primitive(types::Primitive::Int)),
+            ],
+        });
+        assert_eq!(is_monotype(&e), false);
+
+        //```c++
+        //class f { c c1; d d1; };
+        //```
+        let f = types::Type::Class(types::Class {
+            derived_eq: false,
+            fields: vec![Rc::new(c.clone()), Rc::new(d.clone())],
+        });
+        assert_eq!(is_monotype(&f), true);
     }
 }
 
