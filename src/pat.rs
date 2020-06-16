@@ -19,7 +19,7 @@ pub enum Pattern {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InspectExpressionCase {
+pub struct InspectArm {
     pub pattern: Pattern,
     pub guard: Option<Guard>,
 }

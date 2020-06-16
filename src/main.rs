@@ -35,29 +35,26 @@ pub fn pat_contributes(r#type: &types::Type, pattern: &pat::Pattern) -> bool {
     };
 }
 
-/// Return `true` if the specified `inspect_expression_case`, assumed to have
-/// the specified `type`, contributes to the computation of whether or not the
-/// enclosing inspect statement is exhaustive.
-pub fn case_contributes(
-    r#type: &types::Type,
-    inspect_expression_case: &pat::InspectExpressionCase,
-) -> bool {
-    if inspect_expression_case.guard.is_some() {
+/// Return `true` if the specified `arm`, assumed to match the specified
+/// `type`, contributes to the computation of whether or not the enclosing
+/// inspect statement is exhaustive.
+pub fn arm_contributes(r#type: &types::Type, arm: &pat::InspectArm) -> bool {
+    if arm.guard.is_some() {
         return false;
     }
-    return pat_contributes(&r#type, &inspect_expression_case.pattern);
+    return pat_contributes(&r#type, &arm.pattern);
 }
 
-/// Return patterns within the specified `cases`, all assumed to have the
+/// Return patterns within the specified `arms`, all assumed to match the
 /// specified `type`, that contribute to the computation of whether or not the
 /// enclosing inspect statement is exhaustive.
 pub fn filter_noncontributors(
     r#type: types::Type,
-    cases: &Vec<pat::InspectExpressionCase>,
+    arms: &Vec<pat::InspectArm>,
 ) -> Vec<pat::Pattern> {
-    return cases
+    return arms
         .iter()
-        .filter(|c| case_contributes(&r#type, c))
+        .filter(|c| arm_contributes(&r#type, c))
         .map(|c| c.pattern.clone())
         .collect();
 }
@@ -110,27 +107,27 @@ mod tests {
     fn test_filter_noncontributors() {
         // filter_noncontributors( μ⟦ bool ⟧, [] ) ⇒ []
         let ty = types::Type::Primitive(types::Primitive::Bool);
-        let cases: Vec<pat::InspectExpressionCase> = Vec::new();
-        assert_eq!(filter_noncontributors(ty, &cases), Vec::new());
+        let arms: Vec<pat::InspectArm> = Vec::new();
+        assert_eq!(filter_noncontributors(ty, &arms), Vec::new());
 
         // filter_noncontributors( μ⟦ bool ⟧, [μ⟦ _ ⟧] ) ⇒ [μ⟦ _ ⟧]
         let ty = types::Type::Primitive(types::Primitive::Bool);
-        let cases = vec![pat::InspectExpressionCase {
+        let arms = vec![pat::InspectArm {
             pattern: pat::Pattern::Wildcard,
             guard: None,
         }];
         assert_eq!(
-            filter_noncontributors(ty, &cases),
+            filter_noncontributors(ty, &arms),
             vec![pat::Pattern::Wildcard]
         );
 
         // filter_noncontributors( μ⟦ bool ⟧, [μ⟦ _ if (g()) ⟧] ) ⇒ [μ⟦ _ ⟧]
         let ty = types::Type::Primitive(types::Primitive::Bool);
-        let cases = vec![pat::InspectExpressionCase {
+        let arms = vec![pat::InspectArm {
             pattern: pat::Pattern::Wildcard,
             guard: Some(pat::Guard {}),
         }];
-        assert_eq!(filter_noncontributors(ty, &cases), vec![]);
+        assert_eq!(filter_noncontributors(ty, &arms), vec![]);
     }
 
     #[test]
@@ -313,12 +310,12 @@ mod tests {
         assert_eq!(pat_contributes(&d, &pat3), true);
     }
     #[test]
-    fn test_case_contributes() {
+    fn test_arm_contributes() {
         // Check guard case
         assert_eq!(
-            case_contributes(
+            arm_contributes(
                 &types::Type::Primitive(types::Primitive::Bool),
-                &pat::InspectExpressionCase {
+                &pat::InspectArm {
                     pattern: pat::Pattern::ConstExpression(pat::ConstExpression::Other),
                     guard: Some(pat::Guard {})
                 }
@@ -327,9 +324,9 @@ mod tests {
         );
         // Check no-guard case 1
         assert_eq!(
-            case_contributes(
+            arm_contributes(
                 &types::Type::Primitive(types::Primitive::Bool),
-                &pat::InspectExpressionCase {
+                &pat::InspectArm {
                     pattern: pat::Pattern::ConstExpression(pat::ConstExpression::Other),
                     guard: None
                 }
@@ -338,12 +335,12 @@ mod tests {
         );
         // Check no-guard case 2
         assert_eq!(
-            case_contributes(
+            arm_contributes(
                 &types::Type::Class(types::Class {
                     derived_eq: false,
                     fields: vec![],
                 }),
-                &pat::InspectExpressionCase {
+                &pat::InspectArm {
                     pattern: pat::Pattern::ConstExpression(pat::ConstExpression::Other),
                     guard: None
                 }

@@ -17,8 +17,7 @@ algorithms.
 
 ## TODO
 
-- Fix outstanding TODOs
-- Consider using nomenclature "arm" instead of "InspectExpressionCase"
+- Switch to 99 line width.
 - Create tests for base cases of the `useful` function.
 - Continue implementation of `useful`.
 - Implement `is_exhaustive`
