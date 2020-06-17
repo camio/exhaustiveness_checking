@@ -6,18 +6,18 @@ mod types;
 /// has a derived equality operator and has fields that are all either
 /// primitive types or have a deeply derived equality operator.
 pub fn deep_derived_eq(class_type: &types::Class) -> bool {
-    return class_type.derived_eq
+    class_type.derived_eq
         && class_type.fields.iter().all(|t| match &(**t) {
             types::Type::Primitive(_) => true,
             types::Type::Class(c) => deep_derived_eq(c),
-        });
+        })
 }
 
 /// Return `true` if the specified `pattern`, assumed to have the specified
 /// `type`, contributes to the computation of whether or not the enclosing
 /// inspect statement is exhaustive.
 pub fn pat_contributes(r#type: &types::Type, pattern: &pat::Pattern) -> bool {
-    return match (r#type, pattern) {
+    match (r#type, pattern) {
         (_, pat::Pattern::Wildcard) => true,
         (types::Type::Primitive(types::Primitive::Int), pat::Pattern::ConstExpression(_)) => false,
         (types::Type::Primitive(_), _) => true,
@@ -32,7 +32,7 @@ pub fn pat_contributes(r#type: &types::Type, pattern: &pat::Pattern) -> bool {
             .iter()
             .zip(pats.iter())
             .all(|(t, p)| pat_contributes(t, p)),
-    };
+    }
 }
 
 /// Return `true` if the specified `arm`, assumed to match the specified
@@ -40,9 +40,10 @@ pub fn pat_contributes(r#type: &types::Type, pattern: &pat::Pattern) -> bool {
 /// inspect statement is exhaustive.
 pub fn arm_contributes(r#type: &types::Type, arm: &pat::InspectArm) -> bool {
     if arm.guard.is_some() {
-        return false;
+        false
+    } else {
+        pat_contributes(&r#type, &arm.pattern)
     }
-    return pat_contributes(&r#type, &arm.pattern);
 }
 
 /// Return patterns within the specified `arms`, all assumed to match the
@@ -52,22 +53,21 @@ pub fn filter_noncontributors(
     r#type: types::Type,
     arms: &Vec<pat::InspectArm>,
 ) -> Vec<pat::Pattern> {
-    return arms
-        .iter()
+    arms.iter()
         .filter(|c| arm_contributes(&r#type, c))
         .map(|c| c.pattern.clone())
-        .collect();
+        .collect()
 }
 
 /// Return 'true' if the specified 'type' is inhabited by exactly one value.
 pub fn is_monotype(r#type: &types::Type) -> bool {
-    return match r#type {
+    match r#type {
         types::Type::Class(types::Class {
             derived_eq: _,
             fields: flds,
         }) => flds.iter().all(|t| is_monotype(&**t)),
         _ => false,
-    };
+    }
 }
 
 /// Return 'true' if there exists a value of the specified `type` that the

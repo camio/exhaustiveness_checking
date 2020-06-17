@@ -17,7 +17,6 @@ algorithms.
 
 ## TODO
 
-- Switch to 99 line width.
 - Create tests for base cases of the `useful` function.
 - Continue implementation of `useful`.
 - Implement `is_exhaustive`
