@@ -72,12 +72,18 @@ pub fn is_monotype(r#type: &types::Type) -> bool {
 
 /// Return 'true' if there exists a value of the specified `type` that the
 /// specified 'pattern' matches that is not matched by the specified
-/// 'pattern_matrix' and 'false' otherwise.
+/// 'pattern_matrix' and 'false' otherwise. The behavior is undefined unless
+/// 'pat_contributes(pat) = true' for all patterns 'pat' within
+/// 'pattern_matrix'. The behavior is also undefined unless
+/// 'pat_contributes(pat) = true'.
 pub fn useful(
     r#type: &types::Type,
     pattern_matrix: &Vec<pat::Pattern>,
-    _pattern: &pat::Pattern,
+    pat: &pat::Pattern,
 ) -> bool {
+    debug_assert!(pattern_matrix.iter().all(|p| pat_contributes(r#type, p)));
+    debug_assert!(pat_contributes(r#type, pat));
+
     if pattern_matrix.is_empty() {
         // Base case where pattern matrix is empty
         return true;
@@ -110,7 +116,7 @@ mod tests {
         let arms: Vec<pat::InspectArm> = Vec::new();
         assert_eq!(filter_noncontributors(ty, &arms), Vec::new());
 
-        // filter_noncontributors( μ⟦ bool ⟧, [μ⟦ _ ⟧] ) ⇒ [μ⟦ _ ⟧]
+        // filter_noncontributors( μ⟦ bool ⟧, [μ⟦ __ ⟧] ) ⇒ [μ⟦ __ ⟧]
         let ty = types::Type::Primitive(types::Primitive::Bool);
         let arms = vec![pat::InspectArm {
             pattern: pat::Pattern::Wildcard,
@@ -121,7 +127,7 @@ mod tests {
             vec![pat::Pattern::Wildcard]
         );
 
-        // filter_noncontributors( μ⟦ bool ⟧, [μ⟦ _ if (g()) ⟧] ) ⇒ [μ⟦ _ ⟧]
+        // filter_noncontributors( μ⟦ bool ⟧, [μ⟦ __ if (g()) ⟧] ) ⇒ [μ⟦ __ ⟧]
         let ty = types::Type::Primitive(types::Primitive::Bool);
         let arms = vec![pat::InspectArm {
             pattern: pat::Pattern::Wildcard,
@@ -282,7 +288,7 @@ mod tests {
             ],
         }));
 
-        // let pat1 = μ⟦[_, _]⟧
+        // let pat1 = μ⟦[__, __]⟧
         // pat_contributes( μ⟦C⟧, pat1) ⇒  true
 
         let pat1 =
@@ -393,6 +399,39 @@ mod tests {
             fields: vec![Rc::new(c.clone()), Rc::new(d.clone())],
         });
         assert_eq!(is_monotype(&f), true);
+    }
+    #[test]
+    fn test_useful_empty_matrix_base_case() {
+        // let int_type = μ⟦ int ⟧
+        let int_type = Rc::new(types::Type::Primitive(types::Primitive::Int));
+
+        // let mat = μ⟦ ⟧
+        let empty_matrix: Vec<pat::Pattern> = Vec::new();
+
+        // let ty = μ⟦ class C { int a; int b; }
+        let ty = types::Type::Class(types::Class {
+            derived_eq: false,
+            fields: vec![int_type.clone(), int_type.clone()],
+        });
+
+        // let pat = μ⟦ __ ⟧
+        let pat = pat::Pattern::Wildcard;
+
+        assert_eq!(useful(&ty, &empty_matrix, &pat), true);
+    }
+
+    #[test]
+    fn test_useful_monotype_base_case() {
+        // let ty = μ⟦ class c { bool operator==(const c&) = default; } ⟧
+        let ty = types::Type::Class(types::Class {
+            derived_eq: true,
+            fields: Vec::new(),
+        });
+        // let mat = μ⟦ c() ⟧
+        let mat = vec![pat::Pattern::ConstExpression(pat::ConstExpression::Other)];
+        // let pat = μ⟦ __ ⟧
+        let pat = pat::Pattern::Wildcard;
+        assert_eq!(useful(&ty, &mat, &pat), false);
     }
 }
 

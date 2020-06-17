@@ -17,7 +17,6 @@ algorithms.
 
 ## TODO
 
-- Create tests for base cases of the `useful` function.
 - Continue implementation of `useful`.
 - Implement `is_exhaustive`
 - Extend `pat_contributes` to filter out `int` primitive literals. E.g.
