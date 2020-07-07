@@ -6,11 +6,10 @@ use types::Type;
 
 use std::rc::Rc;
 
-/// Return `true` if the specified `pattern`, assumed to have the specified
-/// `type`, contributes to the computation of whether or not the enclosing
-/// inspect statement is exhaustive.
-pub fn pat_contributes(r#type: &Type, pattern: &Pattern) -> bool {
-    match (r#type, pattern) {
+/// Return `true` if the specified `pattern`, assumed to have the specified `pattern_type`,
+/// contributes to the computation of whether or not the enclosing inspect statement is exhaustive.
+pub fn pat_contributes(pattern_type: &Type, pattern: &Pattern) -> bool {
+    match (pattern_type, pattern) {
         (_, Pattern::Wildcard) => true,
         (Type::Primitive(types::Primitive::Int), Pattern::ConstExpression(_)) => false,
         (Type::Primitive(_), _) => true,
@@ -28,23 +27,22 @@ pub fn pat_contributes(r#type: &Type, pattern: &Pattern) -> bool {
     }
 }
 
-/// Return `true` if the specified `arm`, assumed to match the specified
-/// `type`, contributes to the computation of whether or not the enclosing
-/// inspect statement is exhaustive.
-pub fn arm_contributes(r#type: &Type, arm: &pat::InspectArm) -> bool {
+/// Return `true` if the specified `arm`, assumed to match the specified `pattern_type`,
+/// contributes to the computation of whether or not the enclosing inspect statement is exhaustive.
+pub fn arm_contributes(pattern_type: &Type, arm: &pat::InspectArm) -> bool {
     if arm.guard.is_some() {
         false
     } else {
-        pat_contributes(&r#type, &arm.pattern)
+        pat_contributes(&pattern_type, &arm.pattern)
     }
 }
 
-/// Return patterns within the specified `arms`, all assumed to match the
-/// specified `type`, that contribute to the computation of whether or not the
-/// enclosing inspect statement is exhaustive.
-pub fn filter_noncontributors(r#type: Type, arms: &Vec<pat::InspectArm>) -> Vec<Pattern> {
+/// Return patterns within the specified `arms`, all assumed to have the specified `pattern_type`,
+/// that contribute to the computation of whether or not the enclosing inspect statement is
+/// exhaustive.
+pub fn filter_noncontributors(pattern_type: Type, arms: &Vec<pat::InspectArm>) -> Vec<Pattern> {
     arms.iter()
-        .filter(|c| arm_contributes(&r#type, c))
+        .filter(|c| arm_contributes(&pattern_type, c))
         .map(|c| c.pattern.clone())
         .collect()
 }
@@ -209,20 +207,18 @@ pub fn useful2(types: &Vec<Rc<Type>>, p: &Vec<Vec<Pattern>>, q: &Vec<Pattern>) -
     }
 }
 
-/// Return 'true' if there exists a value of the specified `type` that the
-/// specified 'pattern' matches that is not matched by the specified
-/// 'pattern_matrix' and 'false' otherwise. The behavior is undefined unless
-/// 'pat_contributes(pat) = true' for all patterns 'pat' within
-/// 'pattern_matrix'. The behavior is also undefined unless
-/// 'pat_contributes(pat) = true'.
-pub fn useful(r#type: &Type, p: &Vec<Pattern>, q: &Pattern) -> bool {
-    debug_assert!(p.iter().all(|p| pat_contributes(r#type, p)));
-    debug_assert!(pat_contributes(r#type, q));
+/// Return 'true' if there exists a value of the specified `pattern_type` that the specified
+/// 'pattern' matches that is not matched by the specified 'pattern_matrix' and 'false' otherwise.
+/// The behavior is undefined unless 'pat_contributes(pat) = true' for all patterns 'pat' within
+/// 'pattern_matrix'. The behavior is also undefined unless 'pat_contributes(pat) = true'.
+pub fn useful(pattern_type: &Type, p: &Vec<Pattern>, q: &Pattern) -> bool {
+    debug_assert!(p.iter().all(|p| pat_contributes(pattern_type, p)));
+    debug_assert!(pat_contributes(pattern_type, q));
 
     if p.is_empty() {
         // Base case where pattern matrix is empty
         true
-    } else if r#type.is_monotype() {
+    } else if pattern_type.is_monotype() {
         // Base case where the pattern matrix is non-empty and the type is a
         // monotype.
         false
@@ -231,10 +227,10 @@ pub fn useful(r#type: &Type, p: &Vec<Pattern>, q: &Pattern) -> bool {
     }
 }
 
-/// Return 'true' if the specified 'patterns' form an exhaustive set for the
-/// specified 'type' and 'false' otherwise.
-pub fn is_exhaustive(ty: &Type, pattern_matrix: &Vec<Pattern>) -> bool {
-    !useful(ty, pattern_matrix, &Pattern::Wildcard)
+/// Return 'true' if the specified 'patterns' form an exhaustive set for the specified
+/// 'pattern_type' and 'false' otherwise.
+pub fn is_exhaustive(pattern_type: &Type, pattern_matrix: &Vec<Pattern>) -> bool {
+    !useful(pattern_type, pattern_matrix, &Pattern::Wildcard)
 }
 
 #[cfg(test)]
