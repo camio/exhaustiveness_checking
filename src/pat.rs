@@ -43,6 +43,24 @@ impl Pattern {
             _ => false,
         }
     }
+
+    /// Return 'true' if this pattern is a constant expression evaluating to 'true', and 'false'
+    /// otherwise.
+    pub fn is_true(self: &Pattern) -> bool {
+        match self {
+            Pattern::ConstExpression(ConstExpression::True) => true,
+            _ => false,
+        }
+    }
+
+    /// Return 'true' if this pattern is a constant expression evaluating to 'false', and 'false'
+    /// otherwise.
+    pub fn is_false(self: &Pattern) -> bool {
+        match self {
+            Pattern::ConstExpression(ConstExpression::False) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

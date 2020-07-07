@@ -2,8 +2,9 @@ mod pat;
 mod types;
 
 use pat::Pattern;
-use std::rc::Rc;
 use types::Type;
+
+use std::rc::Rc;
 
 /// Return `true` if the specified `pattern`, assumed to have the specified
 /// `type`, contributes to the computation of whether or not the enclosing
@@ -46,17 +47,6 @@ pub fn filter_noncontributors(r#type: Type, arms: &Vec<pat::InspectArm>) -> Vec<
         .filter(|c| arm_contributes(&r#type, c))
         .map(|c| c.pattern.clone())
         .collect()
-}
-
-/// Return 'true' if the specified 'type' is inhabited by exactly one value.
-pub fn is_monotype(r#type: &Type) -> bool {
-    match r#type {
-        Type::Class(types::Class {
-            derived_eq: _,
-            fields,
-        }) => fields.iter().all(|t| is_monotype(&**t)),
-        _ => false,
-    }
 }
 
 // TODO:
@@ -156,21 +146,9 @@ pub fn useful2(types: &Vec<Rc<Type>>, p: &Vec<Vec<Pattern>>, q: &Vec<Pattern>) -
             let complete_root_constructors: bool = match t1 {
                 Type::Primitive(types::Primitive::Int) => false,
                 Type::Primitive(types::Primitive::Bool) => {
-                    // TODO: Find a way to make this cleaner
-                    p.iter()
-                        .find(|&row| match row[0] {
-                            Pattern::ConstExpression(pat::ConstExpression::True) => true,
-                            _ => false,
-                        })
-                        .is_some()
-                        && p.iter()
-                            .find(|&row| match row[0] {
-                                Pattern::ConstExpression(pat::ConstExpression::False) => true,
-                                _ => false,
-                            })
-                            .is_some()
+                    p.iter().find(|&row| row[0].is_true()).is_some()
+                        && p.iter().find(|&row| row[0].is_false()).is_some()
                 }
-
                 Type::Class(_) => p
                     .iter()
                     .find(|&row| row[0].is_structured_binding())
@@ -244,7 +222,7 @@ pub fn useful(r#type: &Type, p: &Vec<Pattern>, q: &Pattern) -> bool {
     if p.is_empty() {
         // Base case where pattern matrix is empty
         true
-    } else if is_monotype(r#type) {
+    } else if r#type.is_monotype() {
         // Base case where the pattern matrix is non-empty and the type is a
         // monotype.
         false
@@ -453,49 +431,6 @@ mod tests {
             ),
             false
         );
-    }
-    #[test]
-    fn test_is_monotype() {
-        assert_eq!(is_monotype(&Type::Primitive(types::Primitive::Bool)), false);
-        //```c++
-        //class c {};
-        //```
-        let c = Type::Class(types::Class {
-            derived_eq: false,
-            fields: Vec::new(),
-        });
-        assert_eq!(is_monotype(&c), true);
-
-        //```c++
-        //class d { c c1; };
-        //```
-        let d = Type::Class(types::Class {
-            derived_eq: false,
-            fields: vec![Rc::new(c.clone())],
-        });
-
-        assert_eq!(is_monotype(&d), true);
-
-        //```c++
-        //class e { c c1; int i; };
-        //```
-        let e = Type::Class(types::Class {
-            derived_eq: false,
-            fields: vec![
-                Rc::new(c.clone()),
-                Rc::new(Type::Primitive(types::Primitive::Int)),
-            ],
-        });
-        assert_eq!(is_monotype(&e), false);
-
-        //```c++
-        //class f { c c1; d d1; };
-        //```
-        let f = Type::Class(types::Class {
-            derived_eq: false,
-            fields: vec![Rc::new(c.clone()), Rc::new(d.clone())],
-        });
-        assert_eq!(is_monotype(&f), true);
     }
     #[test]
     fn test_useful_empty_matrix_base_case() {
