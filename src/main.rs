@@ -1,6 +1,8 @@
 mod pat;
 mod types;
 
+use std::rc::Rc;
+
 /// Return 'true' if the specified 'class_type' has a deeply derived equality
 /// operator. A class is said to have a deeply derived equality operator if it
 /// has a derived equality operator and has fields that are all either
@@ -25,10 +27,10 @@ pub fn pat_contributes(r#type: &types::Type, pattern: &pat::Pattern) -> bool {
         (
             types::Type::Class(types::Class {
                 derived_eq: _,
-                fields: types,
+                fields,
             }),
             pat::Pattern::StructuredBinding(pats),
-        ) => types
+        ) => fields
             .iter()
             .zip(pats.iter())
             .all(|(t, p)| pat_contributes(t, p)),
@@ -64,9 +66,185 @@ pub fn is_monotype(r#type: &types::Type) -> bool {
     match r#type {
         types::Type::Class(types::Class {
             derived_eq: _,
-            fields: flds,
-        }) => flds.iter().all(|t| is_monotype(&**t)),
+            fields,
+        }) => fields.iter().all(|t| is_monotype(&**t)),
         _ => false,
+    }
+}
+
+// TODO:
+// - 'ConstExpression' and 'StructuredBinding' are both "constructed patterns". The underlying type
+//   could reflect the differentiation between these and wildcard and this code will get simpler.
+// - 'ConstExpression' needs to be revisited, especially as it relates to 'Other'. These are really
+//   primitive values and we should use StructuredBinding to represent class values that can be
+//   destructured. This could be described as an earlier pass of the pattern. I suppose we could
+//   leave Other after that pass.
+
+pub fn constructor_from_const_expression(ce: &pat::ConstExpression) -> pat::Constructor {
+    match ce {
+        pat::ConstExpression::True => pat::Constructor::True,
+        pat::ConstExpression::False => pat::Constructor::False,
+        pat::ConstExpression::Num(n) => pat::Constructor::Num(*n),
+        pat::ConstExpression::Other => {
+            panic!("Cannot convert \"other\" expression to pat::Constructor")
+        }
+    }
+}
+
+pub fn constructor_from_pattern(p: &pat::Pattern) -> pat::Constructor {
+    match p {
+        pat::Pattern::StructuredBinding(pats) => pat::Constructor::ClassConstructor {
+            num_fields: pats.len(),
+        },
+        pat::Pattern::ConstExpression(ce) => constructor_from_const_expression(ce),
+        pat::Pattern::Wildcard => panic!("Cannot convert wildcard to constructor"),
+    }
+}
+
+pub fn s(c: &pat::Constructor, p: &Vec<Vec<pat::Pattern>>) -> Vec<Vec<pat::Pattern>> {
+    let mut result: Vec<Vec<pat::Pattern>> = Vec::new();
+
+    for p_i in p {
+        let p_i_1 = &p_i[0];
+        match p_i_1 {
+            // constexpr constructed pattern
+            pat::Pattern::ConstExpression(const_expr) => {
+                if constructor_from_const_expression(const_expr) == *c {
+                    result.push(p_i[1..].to_vec())
+                } else {
+                    // If the constexpr value doesn't match the constructor 'c' then don't add a
+                    // row.
+                    ()
+                }
+            }
+
+            // structured binding constructed pattern
+            pat::Pattern::StructuredBinding(pats) => {
+                debug_assert!(c.is_class_constructor());
+                let mut row: Vec<pat::Pattern> = Vec::new();
+                row.extend_from_slice(pats);
+                row.extend_from_slice(&p_i[1..]);
+                result.push(row)
+            }
+
+            pat::Pattern::Wildcard => match c {
+                // Wildcard pattern with strutured binding gets _'s followed by p_i_2 to p_i_n
+                pat::Constructor::ClassConstructor { num_fields } => {
+                    let mut row: Vec<pat::Pattern> = Vec::new();
+                    row.extend(
+                        std::iter::repeat(&pat::Pattern::Wildcard)
+                            .cloned()
+                            .take(*num_fields as usize),
+                    );
+                    row.extend_from_slice(&p_i[1..]);
+                    result.push(row)
+                }
+                _ => result.push(p_i[1..].to_vec()),
+            },
+        }
+    }
+    return result;
+}
+
+pub fn useful2(
+    types: &Vec<Rc<types::Type>>,
+    p: &Vec<Vec<pat::Pattern>>,
+    q: &Vec<pat::Pattern>,
+) -> bool {
+    // This is a version of 'useful' that uses pattern matrix style patterns. The original pattern
+    // must be preprocessed before this function can be used.
+
+    let n = q.len();
+    let m = p.len();
+
+    if n == 0 {
+        if m > 0 {
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    let q1 = &q[0];
+    let t1 = &*types[0];
+
+    match q1 {
+        pat::Pattern::Wildcard => {
+            let complete_root_constructors: bool = match t1 {
+                types::Type::Primitive(types::Primitive::Int) => false,
+                types::Type::Primitive(types::Primitive::Bool) => {
+                    // TODO: Find a way to make this cleaner
+                    p.iter()
+                        .find(|&row| match row[0] {
+                            pat::Pattern::ConstExpression(pat::ConstExpression::True) => true,
+                            _ => false,
+                        })
+                        .is_some()
+                        && p.iter()
+                            .find(|&row| match row[0] {
+                                pat::Pattern::ConstExpression(pat::ConstExpression::False) => true,
+                                _ => false,
+                            })
+                            .is_some()
+                }
+
+                types::Type::Class(_) => p
+                    .iter()
+                    .find(|&row| row[0].is_structured_binding())
+                    .is_some(),
+            };
+
+            // TODO: Implement 'unimplemented!' sections
+
+            if complete_root_constructors {
+                match t1 {
+                    types::Type::Primitive(types::Primitive::Bool) => {
+                        // TODO: types_prime is computed in the same way both here and below. First
+                        // need to verify that it is correct. Second I need to somehow abstract out
+                        // the code.
+
+                        // Set 'types_prime' to the type associated with the recursive call to 'useful2'.
+                        let mut types_prime: Vec<Rc<types::Type>> = Vec::new();
+                        match t1 {
+                            types::Type::Primitive(_) => (),
+                            types::Type::Class(types::Class {
+                                derived_eq: _,
+                                fields,
+                            }) => types_prime.extend(fields.iter().cloned()),
+                        }
+                        types_prime.extend(types[1..].iter().cloned());
+
+                        [pat::Constructor::True, pat::Constructor::False]
+                            .iter()
+                            .find(|c_k| {
+                                useful2(&types_prime, &s(c_k, &p), &s(c_k, &vec![q.clone()])[0])
+                            })
+                            .is_some()
+                    }
+                    types::Type::Class(_) => unimplemented!(),
+                    _ => panic!("Impossible!"),
+                }
+            } else {
+                unimplemented!()
+            }
+        }
+
+        // All other patterns are constructed patterns.
+        constructed_pattern => {
+            let c = constructor_from_pattern(constructed_pattern);
+            // Set 'types_prime' to the type associated with the recursive call to 'useful2'.
+            let mut types_prime: Vec<Rc<types::Type>> = Vec::new();
+            match t1 {
+                types::Type::Primitive(_) => (),
+                types::Type::Class(types::Class {
+                    derived_eq: _,
+                    fields,
+                }) => types_prime.extend(fields.iter().cloned()),
+            }
+            types_prime.extend(types[1..].iter().cloned());
+
+            useful2(&types_prime, &s(&c, &p), &s(&c, &vec![q.clone()])[0])
+        }
     }
 }
 
@@ -76,32 +254,26 @@ pub fn is_monotype(r#type: &types::Type) -> bool {
 /// 'pat_contributes(pat) = true' for all patterns 'pat' within
 /// 'pattern_matrix'. The behavior is also undefined unless
 /// 'pat_contributes(pat) = true'.
-pub fn useful(
-    r#type: &types::Type,
-    pattern_matrix: &Vec<pat::Pattern>,
-    pat: &pat::Pattern,
-) -> bool {
-    debug_assert!(pattern_matrix.iter().all(|p| pat_contributes(r#type, p)));
-    debug_assert!(pat_contributes(r#type, pat));
+pub fn useful(r#type: &types::Type, p: &Vec<pat::Pattern>, q: &pat::Pattern) -> bool {
+    debug_assert!(p.iter().all(|p| pat_contributes(r#type, p)));
+    debug_assert!(pat_contributes(r#type, q));
 
-    if pattern_matrix.is_empty() {
+    if p.is_empty() {
         // Base case where pattern matrix is empty
-        return true;
+        true
+    } else if is_monotype(r#type) {
+        // Base case where the pattern matrix is non-empty and the type is a
+        // monotype.
+        false
+    } else {
+        unimplemented!();
     }
-
-    // Base case where the pattern matrix is non-empty and the type is a
-    // monotype.
-    if is_monotype(r#type) {
-        return false;
-    }
-
-    unimplemented!();
 }
 
 /// Return 'true' if the specified 'patterns' form an exhaustive set for the
 /// specified 'type' and 'false' otherwise.
-pub fn is_exhaustive(_type: &types::Type, _patterns: &Vec<pat::Pattern>) -> bool {
-    unimplemented!();
+pub fn is_exhaustive(ty: &types::Type, pattern_matrix: &Vec<pat::Pattern>) -> bool {
+    !useful(ty, pattern_matrix, &pat::Pattern::Wildcard)
 }
 
 #[cfg(test)]
