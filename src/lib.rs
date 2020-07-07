@@ -1,12 +1,11 @@
+pub mod contrib;
 pub mod pat;
 pub mod types;
-pub mod contrib;
 
 use pat::Pattern;
 use types::Type;
 
 use std::rc::Rc;
-
 
 // TODO:
 // - 'ConstExpression' and 'StructuredBinding' are both "constructed patterns". The underlying type
@@ -80,6 +79,11 @@ pub fn s(c: &pat::Constructor, p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
         }
     }
     return result;
+}
+
+pub fn d(_c: &pat::Constructor, _p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
+    // TODO
+    unimplemented!();
 }
 
 pub fn useful2(types: &Vec<Rc<Type>>, p: &Vec<Vec<Pattern>>, q: &Vec<Pattern>) -> bool {
@@ -198,6 +202,79 @@ pub fn is_exhaustive(pattern_type: &Type, pattern_matrix: &Vec<Pattern>) -> bool
 mod tests {
     use super::*;
     use std::rc::Rc;
+
+    #[test]
+    fn test_s() {
+        assert_eq!(
+            s(&pat::Constructor::True, &Vec::new()),
+            Vec::new() as Vec<Vec<Pattern>>
+        );
+
+        let pat_true = pat::Pattern::ConstExpression(pat::ConstExpression::True);
+        let pat1 = pat::Pattern::ConstExpression(pat::ConstExpression::Num(1));
+        let pat2 = pat::Pattern::ConstExpression(pat::ConstExpression::Num(2));
+
+        // s( μ⟦ true ⟧, μ⟦ true 1 2 ⟧ ) ⇒ μ⟦ 1 2 ⟧
+        assert_eq!(
+            s(
+                &pat::Constructor::True,
+                &vec![vec![pat_true.clone(), pat1.clone(), pat2.clone()]]
+            ),
+            vec![vec![pat1.clone(), pat2.clone()]]
+        );
+
+        // s( μ⟦ true ⟧, μ⟦ false 1 2 ⟧ ) ⇒ μ⟦ ⟧
+        assert_eq!(
+            s(
+                &pat::Constructor::False,
+                &vec![vec![pat_true.clone(), pat1.clone(), pat2.clone()]]
+            ),
+            Vec::new() as Vec<Vec<Pattern>>
+        );
+
+        // s( μ⟦ true ⟧, μ⟦ _ 1 2 ⟧ ) ⇒ μ⟦ 1 2 ⟧
+        assert_eq!(
+            s(
+                &pat::Constructor::True,
+                &vec![vec![Pattern::Wildcard, pat1.clone(), pat2.clone()]]
+            ),
+            vec![vec![pat1.clone(), pat2.clone()]]
+        );
+
+        // s( μ⟦ {}³ ⟧, μ⟦ [1 2 _] 1 2 ⟧ ) ⇒ μ⟦ 1 2 _ 1 2 ⟧
+        assert_eq!(
+            s(
+                &pat::Constructor::ClassConstructor { num_fields: 3 },
+                &vec![vec![
+                    Pattern::StructuredBinding(vec![pat1.clone(), pat2.clone(), Pattern::Wildcard]),
+                    pat1.clone(),
+                    pat2.clone()
+                ]]
+            ),
+            vec![vec![
+                pat1.clone(),
+                pat2.clone(),
+                Pattern::Wildcard,
+                pat1.clone(),
+                pat2.clone()
+            ]]
+        );
+
+        // s( μ⟦ {}³ ⟧, μ⟦ _ 1 2 ⟧ ) ⇒ μ⟦ _ _ _ 1 2 ⟧
+        assert_eq!(
+            s(
+                &pat::Constructor::ClassConstructor { num_fields: 3 },
+                &vec![vec![Pattern::Wildcard, pat1.clone(), pat2.clone()]]
+            ),
+            vec![vec![
+                Pattern::Wildcard,
+                Pattern::Wildcard,
+                Pattern::Wildcard,
+                pat1.clone(),
+                pat2.clone()
+            ]]
+        );
+    }
 
     #[test]
     fn test_useful_empty_matrix_base_case() {
