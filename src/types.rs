@@ -2,19 +2,19 @@
 
 use std::rc::Rc;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Primitive {
     Bool,
     Int,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Class {
     pub derived_eq: bool,
     pub fields: Vec<Rc<Type>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Type {
     Primitive(Primitive),
     Class(Class),

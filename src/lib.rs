@@ -3,6 +3,8 @@ pub mod pat;
 pub mod types;
 
 use pat::Pattern;
+use types::Class;
+use types::Primitive;
 use types::Type;
 
 use std::rc::Rc;
@@ -33,6 +35,28 @@ pub fn constructor_from_pattern(p: &Pattern) -> pat::Constructor {
         },
         Pattern::ConstExpression(ce) => constructor_from_const_expression(ce),
         Pattern::Wildcard => panic!("Cannot convert wildcard to constructor"),
+    }
+}
+
+/// Return the types corresponding to the result of an 's' invocation assuming 's' incoming 'p'
+/// argument has the specified 'types'.
+pub fn s_types(types: &Vec<Rc<Type>>) -> Vec<Rc<Type>> {
+    // TODO: At some point decide if '!types.is_empty()' should be a precondition. If so, it would
+    // also be a precondition for 's'.
+    if types.is_empty() {
+        Vec::new()
+    } else {
+        let mut result: Vec<Rc<Type>> = Vec::new();
+        let t1 = &*types[0];
+        match t1 {
+            Type::Primitive(_) => (),
+            Type::Class(types::Class {
+                derived_eq: _,
+                fields,
+            }) => result.extend(fields.iter().cloned()),
+        }
+        result.extend(types[1..].iter().cloned());
+        result
     }
 }
 
@@ -123,25 +147,10 @@ pub fn useful2(types: &Vec<Rc<Type>>, p: &Vec<Vec<Pattern>>, q: &Vec<Pattern>) -
             if complete_root_constructors {
                 match t1 {
                     Type::Primitive(types::Primitive::Bool) => {
-                        // TODO: types_prime is computed in the same way both here and below. First
-                        // need to verify that it is correct. Second I need to somehow abstract out
-                        // the code.
-
-                        // Set 'types_prime' to the type associated with the recursive call to 'useful2'.
-                        let mut types_prime: Vec<Rc<Type>> = Vec::new();
-                        match t1 {
-                            Type::Primitive(_) => (),
-                            Type::Class(types::Class {
-                                derived_eq: _,
-                                fields,
-                            }) => types_prime.extend(fields.iter().cloned()),
-                        }
-                        types_prime.extend(types[1..].iter().cloned());
-
                         [pat::Constructor::True, pat::Constructor::False]
                             .iter()
                             .find(|c_k| {
-                                useful2(&types_prime, &s(c_k, &p), &s(c_k, &vec![q.clone()])[0])
+                                useful2(&s_types(types), &s(c_k, &p), &s(c_k, &vec![q.clone()])[0])
                             })
                             .is_some()
                     }
@@ -156,18 +165,7 @@ pub fn useful2(types: &Vec<Rc<Type>>, p: &Vec<Vec<Pattern>>, q: &Vec<Pattern>) -
         // All other patterns are constructed patterns.
         constructed_pattern => {
             let c = constructor_from_pattern(constructed_pattern);
-            // Set 'types_prime' to the type associated with the recursive call to 'useful2'.
-            let mut types_prime: Vec<Rc<Type>> = Vec::new();
-            match t1 {
-                Type::Primitive(_) => (),
-                Type::Class(types::Class {
-                    derived_eq: _,
-                    fields,
-                }) => types_prime.extend(fields.iter().cloned()),
-            }
-            types_prime.extend(types[1..].iter().cloned());
-
-            useful2(&types_prime, &s(&c, &p), &s(&c, &vec![q.clone()])[0])
+            useful2(&s_types(types), &s(&c, &p), &s(&c, &vec![q.clone()])[0])
         }
     }
 }
@@ -202,6 +200,40 @@ pub fn is_exhaustive(pattern_type: &Type, pattern_matrix: &Vec<Pattern>) -> bool
 mod tests {
     use super::*;
     use std::rc::Rc;
+
+    #[test]
+    fn test_s_types() {
+        // s_types( μ⟦ [] ⟧ ) → μ⟦ [] ⟧
+        assert_eq!(s_types(&Vec::new()), Vec::new() as Vec<Rc<Type>>);
+
+        // s_types( μ⟦ [bool, int] ⟧ ) → μ⟦ [int] ⟧
+        assert_eq!(
+            s_types(&vec![
+                Rc::new(Type::Primitive(Primitive::Bool)),
+                Rc::new(Type::Primitive(Primitive::Int))
+            ]),
+            vec![Rc::new(Type::Primitive(Primitive::Int))]
+        );
+
+        // s_types( μ⟦ [class { bool, int }, int] ⟧ ) → μ⟦ [bool, int, int] ⟧
+        assert_eq!(
+            s_types(&vec![
+                Rc::new(Type::Class(Class {
+                    derived_eq: true,
+                    fields: vec![
+                        Rc::new(Type::Primitive(Primitive::Bool)),
+                        Rc::new(Type::Primitive(Primitive::Int)),
+                    ]
+                })),
+                Rc::new(Type::Primitive(Primitive::Int))
+            ]),
+            vec![
+                Rc::new(Type::Primitive(Primitive::Bool)),
+                Rc::new(Type::Primitive(Primitive::Int)),
+                Rc::new(Type::Primitive(Primitive::Int)),
+            ]
+        );
+    }
 
     #[test]
     fn test_s() {
