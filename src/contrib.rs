@@ -38,7 +38,7 @@ pub fn arm_contributes(pattern_type: &Type, arm: &pat::InspectArm) -> bool {
 /// Return patterns within the specified `arms`, all assumed to have the specified `pattern_type`,
 /// that contribute to the computation of whether or not the enclosing inspect statement is
 /// exhaustive.
-pub fn filter_noncontributors(pattern_type: Type, arms: &Vec<pat::InspectArm>) -> Vec<Pattern> {
+pub fn filter_noncontributors(pattern_type: &Type, arms: &Vec<pat::InspectArm>) -> Vec<Pattern> {
     arms.iter()
         .filter(|c| arm_contributes(&pattern_type, c))
         .map(|c| c.pattern.clone())
@@ -55,7 +55,7 @@ mod tests {
         // filter_noncontributors( μ⟦ bool ⟧, [] ) ⇒ []
         let ty = Type::Primitive(Primitive::Bool);
         let arms: Vec<pat::InspectArm> = Vec::new();
-        assert_eq!(filter_noncontributors(ty, &arms), Vec::new());
+        assert_eq!(filter_noncontributors(&ty, &arms), Vec::new());
 
         // filter_noncontributors( μ⟦ bool ⟧, [μ⟦ __ ⟧] ) ⇒ [μ⟦ __ ⟧]
         let ty = Type::Primitive(Primitive::Bool);
@@ -63,7 +63,7 @@ mod tests {
             pattern: Pattern::Wildcard,
             guard: None,
         }];
-        assert_eq!(filter_noncontributors(ty, &arms), vec![Pattern::Wildcard]);
+        assert_eq!(filter_noncontributors(&ty, &arms), vec![Pattern::Wildcard]);
 
         // filter_noncontributors( μ⟦ bool ⟧, [μ⟦ __ if (g()) ⟧] ) ⇒ [μ⟦ __ ⟧]
         let ty = Type::Primitive(Primitive::Bool);
@@ -71,7 +71,7 @@ mod tests {
             pattern: Pattern::Wildcard,
             guard: Some(pat::Guard {}),
         }];
-        assert_eq!(filter_noncontributors(ty, &arms), vec![]);
+        assert_eq!(filter_noncontributors(&ty, &arms), vec![]);
     }
 
     #[test]

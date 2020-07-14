@@ -44,12 +44,10 @@ impl Type {
     fn constructors(self: &Type) -> Vec<pat::Constructor> {
         // TODO: needs test
         match self {
-            Type::Primitive(types::Primitive::Bool) => {
+            Type::Primitive(Primitive::Bool) => {
                 vec![pat::Constructor::True, pat::Constructor::False]
             }
-            Type::Primitive(types::Primitive::Int) => {
-                panic!("Cannot enumerate 'int' constructors.")
-            }
+            Type::Primitive(Primitive::Int) => panic!("Cannot enumerate 'int' constructors."),
             Type::Class(Class {
                 derived_eq: _,
                 fields,
@@ -127,14 +125,34 @@ pub fn s(c: &pat::Constructor, p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
     return result;
 }
 
-pub fn d(_c: &pat::Constructor, _p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
-    // TODO
-    unimplemented!();
+pub fn d_types(types: &Vec<Rc<Type>>) -> Vec<Rc<Type>> {
+    types[1..].to_vec()
+}
+pub fn d(p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
+    let mut result = Vec::new();
+    for p_i in p {
+        let p_i_1 = &p_i[0];
+        match p_i_1 {
+            // constexpr constructed pattern
+            Pattern::ConstExpression(_) => (),
+
+            // structured binding constructed pattern
+            Pattern::StructuredBinding(_) => (),
+
+            Pattern::Wildcard => result.push(p_i[1..].to_vec()),
+        }
+    }
+    result
 }
 
-pub fn useful2(types: &Vec<Rc<Type>>, p: &Vec<Vec<Pattern>>, q: &Vec<Pattern>) -> bool {
-    // This is a version of 'useful' that uses pattern matrix style patterns. The original pattern
-    // must be preprocessed before this function can be used.
+/// Return 'true' if there exists a sequence of values with the specified `types` that the
+/// specified 'q' pattern sequence matches that is not matched by one of he pattern sequences in he
+/// specified 'p' and 'false' otherwise. The behavior is undefined unless 'pat_contributes(pat) =
+/// true' for all patterns 'pat' within 'p'. The behavior is also undefined unless
+/// 'pat_contributes(q) = true'.
+pub fn useful(types: &Vec<Rc<Type>>, p: &Vec<Vec<Pattern>>, q: &Vec<Pattern>) -> bool {
+    // TODO: Determine if this can be elegantly extended to handle non-contributing patterns.
+    // TODO: Investigate if the arguments to this function would more appropriately be slices.
 
     let n = q.len();
     let m = p.len();
@@ -153,8 +171,8 @@ pub fn useful2(types: &Vec<Rc<Type>>, p: &Vec<Vec<Pattern>>, q: &Vec<Pattern>) -
     match q1 {
         Pattern::Wildcard => {
             let complete_root_constructors: bool = match t1 {
-                Type::Primitive(types::Primitive::Int) => false,
-                Type::Primitive(types::Primitive::Bool) => {
+                Type::Primitive(Primitive::Int) => false,
+                Type::Primitive(Primitive::Bool) => {
                     p.iter().find(|&row| row[0].is_true()).is_some()
                         && p.iter().find(|&row| row[0].is_false()).is_some()
                 }
@@ -167,46 +185,37 @@ pub fn useful2(types: &Vec<Rc<Type>>, p: &Vec<Vec<Pattern>>, q: &Vec<Pattern>) -
             if complete_root_constructors {
                 t1.constructors()
                     .iter()
-                    .find(|c_k| useful2(&s_types(types), &s(c_k, &p), &s(c_k, &vec![q.clone()])[0]))
+                    .find(|c_k| useful(&s_types(types), &s(c_k, &p), &s(c_k, &vec![q.clone()])[0]))
                     .is_some()
             } else {
-                // TODO: Implement
-                unimplemented!()
+                useful(
+                    &d_types(types),
+                    &d(&p),
+                    &q.iter().skip(1).cloned().collect(),
+                )
             }
         }
 
         // All other patterns are constructed patterns.
         constructed_pattern => {
             let c = constructor_from_pattern(constructed_pattern);
-            useful2(&s_types(types), &s(&c, &p), &s(&c, &vec![q.clone()])[0])
+            useful(&s_types(types), &s(&c, &p), &s(&c, &vec![q.clone()])[0])
         }
-    }
-}
-
-/// Return 'true' if there exists a value of the specified `pattern_type` that the specified
-/// 'pattern' matches that is not matched by the specified 'pattern_matrix' and 'false' otherwise.
-/// The behavior is undefined unless 'pat_contributes(pat) = true' for all patterns 'pat' within
-/// 'pattern_matrix'. The behavior is also undefined unless 'pat_contributes(pat) = true'.
-pub fn useful(pattern_type: &Type, p: &Vec<Pattern>, q: &Pattern) -> bool {
-    debug_assert!(p.iter().all(|p| contrib::pat_contributes(pattern_type, p)));
-    debug_assert!(contrib::pat_contributes(pattern_type, q));
-
-    if p.is_empty() {
-        // Base case where pattern matrix is empty
-        true
-    } else if pattern_type.is_monotype() {
-        // Base case where the pattern matrix is non-empty and the type is a
-        // monotype.
-        false
-    } else {
-        unimplemented!();
     }
 }
 
 /// Return 'true' if the specified 'patterns' form an exhaustive set for the specified
 /// 'pattern_type' and 'false' otherwise.
-pub fn is_exhaustive(pattern_type: &Type, pattern_matrix: &Vec<Pattern>) -> bool {
-    !useful(pattern_type, pattern_matrix, &Pattern::Wildcard)
+pub fn is_exhaustive(pattern_type: &Type, patterns: &Vec<pat::InspectArm>) -> bool {
+    // TODO: write some tests for this
+    !useful(
+        &vec![Rc::new(pattern_type.clone())],
+        &contrib::filter_noncontributors(pattern_type, patterns)
+            .iter()
+            .map(|p| vec![p.clone()])
+            .collect(),
+        &vec![Pattern::Wildcard],
+    )
 }
 
 #[cfg(test)]
@@ -322,36 +331,271 @@ mod tests {
     }
 
     #[test]
-    fn test_useful_empty_matrix_base_case() {
-        // let int_type = μ⟦ int ⟧
-        let int_type = Rc::new(Type::Primitive(types::Primitive::Int));
+    fn test_useful_bool() {
+        // useful( μ⟦ [bool] ⟧, μ⟦ [ true ] ⟧, μ⟦ true ⟧ ) ⇒ false
+        assert_eq!(
+            useful(
+                &vec![Rc::new(Type::Primitive(Primitive::Bool))],
+                &vec![vec![Pattern::ConstExpression(pat::ConstExpression::True)]],
+                &vec![Pattern::ConstExpression(pat::ConstExpression::True)]
+            ),
+            false
+        );
 
-        // let mat = μ⟦ ⟧
-        let empty_matrix: Vec<Pattern> = Vec::new();
+        // useful( μ⟦ [bool] ⟧, μ⟦ [ true ] ⟧, μ⟦ false ⟧ ) ⇒ true
+        assert_eq!(
+            useful(
+                &vec![Rc::new(Type::Primitive(Primitive::Bool))],
+                &vec![vec![Pattern::ConstExpression(pat::ConstExpression::True)]],
+                &vec![Pattern::ConstExpression(pat::ConstExpression::False)]
+            ),
+            true
+        );
 
-        // let ty = μ⟦ class C { int a; int b; }
-        let ty = Type::Class(types::Class {
-            derived_eq: false,
-            fields: vec![int_type.clone(), int_type.clone()],
-        });
+        // useful( μ⟦ [bool] ⟧, μ⟦ [ true ] ⟧, μ⟦ _ ⟧ ) ⇒ true
+        assert_eq!(
+            useful(
+                &vec![Rc::new(Type::Primitive(Primitive::Bool))],
+                &vec![vec![Pattern::ConstExpression(pat::ConstExpression::True)]],
+                &vec![Pattern::Wildcard]
+            ),
+            true
+        );
 
-        // let pat = μ⟦ __ ⟧
-        let pat = Pattern::Wildcard;
+        // useful( μ⟦ [bool] ⟧, μ⟦ [ true, false ] ⟧, μ⟦ _ ⟧ ) ⇒ false
+        assert_eq!(
+            useful(
+                &vec![Rc::new(Type::Primitive(Primitive::Bool))],
+                &vec![
+                    vec![Pattern::ConstExpression(pat::ConstExpression::True)],
+                    vec![Pattern::ConstExpression(pat::ConstExpression::False)],
+                ],
+                &vec![Pattern::Wildcard]
+            ),
+            false
+        );
 
-        assert_eq!(useful(&ty, &empty_matrix, &pat), true);
+        // useful( μ⟦ [bool] ⟧, μ⟦ [ true, false ] ⟧, μ⟦ true ⟧ ) ⇒ false
+        assert_eq!(
+            useful(
+                &vec![Rc::new(Type::Primitive(Primitive::Bool))],
+                &vec![
+                    vec![Pattern::ConstExpression(pat::ConstExpression::True)],
+                    vec![Pattern::ConstExpression(pat::ConstExpression::False)],
+                ],
+                &vec![Pattern::ConstExpression(pat::ConstExpression::True)]
+            ),
+            false
+        );
     }
 
     #[test]
-    fn test_useful_monotype_base_case() {
-        // let ty = μ⟦ class c { bool operator==(const c&) = default; } ⟧
-        let ty = Type::Class(types::Class {
+    fn test_useful_class() {
+        // let ty = μ⟦ class c { bool operator==(const c&) = default; bool a; bool b;} ⟧
+        let ty = Type::Class(Class {
             derived_eq: true,
-            fields: Vec::new(),
+            fields: vec![
+                Rc::new(Type::Primitive(Primitive::Bool)),
+                Rc::new(Type::Primitive(Primitive::Bool)),
+            ],
         });
-        // let mat = μ⟦ c() ⟧
-        let mat = vec![Pattern::ConstExpression(pat::ConstExpression::Other)];
-        // let pat = μ⟦ __ ⟧
-        let pat = Pattern::Wildcard;
-        assert_eq!(useful(&ty, &mat, &pat), false);
+
+        // useful( μ⟦ [c] ⟧, μ⟦ [ {true, _} ] ⟧, μ⟦ {false, _} ⟧ ) ⇒ true
+        assert_eq!(
+            useful(
+                &vec![Rc::new(ty.clone())],
+                &vec![vec![Pattern::StructuredBinding(vec![
+                    Pattern::ConstExpression(pat::ConstExpression::True),
+                    Pattern::Wildcard
+                ])]],
+                &vec![Pattern::StructuredBinding(vec![
+                    Pattern::ConstExpression(pat::ConstExpression::False),
+                    Pattern::Wildcard
+                ])]
+            ),
+            true
+        );
+
+        // useful( μ⟦ [c] ⟧, μ⟦ [ {true, _} ] ⟧, μ⟦ {true, _} ⟧ ) ⇒ false
+        assert_eq!(
+            useful(
+                &vec![Rc::new(ty.clone())],
+                &vec![vec![Pattern::StructuredBinding(vec![
+                    Pattern::ConstExpression(pat::ConstExpression::True),
+                    Pattern::Wildcard
+                ])]],
+                &vec![Pattern::StructuredBinding(vec![
+                    Pattern::ConstExpression(pat::ConstExpression::True),
+                    Pattern::Wildcard
+                ])]
+            ),
+            false
+        );
+
+        // useful( μ⟦ [c] ⟧, μ⟦ [ {true, _} ] ⟧, μ⟦ {false, true} ⟧ ) ⇒ true
+        assert_eq!(
+            useful(
+                &vec![Rc::new(ty.clone())],
+                &vec![vec![Pattern::StructuredBinding(vec![
+                    Pattern::ConstExpression(pat::ConstExpression::True),
+                    Pattern::Wildcard
+                ])]],
+                &vec![Pattern::StructuredBinding(vec![
+                    Pattern::ConstExpression(pat::ConstExpression::False),
+                    Pattern::ConstExpression(pat::ConstExpression::True),
+                ])]
+            ),
+            true
+        );
+
+        // useful(
+        //   μ⟦ [c] ⟧,
+        //   μ⟦ [ {true, _},
+        //        {false, true},
+        //        {false, false} ] ⟧,
+        //   μ⟦ {_, _} ⟧ ) ⇒ false
+        assert_eq!(
+            useful(
+                &vec![Rc::new(ty.clone())],
+                &vec![
+                    vec![Pattern::StructuredBinding(vec![
+                        Pattern::ConstExpression(pat::ConstExpression::True),
+                        Pattern::Wildcard,
+                    ])],
+                    vec![Pattern::StructuredBinding(vec![
+                        Pattern::ConstExpression(pat::ConstExpression::False),
+                        Pattern::ConstExpression(pat::ConstExpression::True),
+                    ])],
+                    vec![Pattern::StructuredBinding(vec![
+                        Pattern::ConstExpression(pat::ConstExpression::False),
+                        Pattern::ConstExpression(pat::ConstExpression::False),
+                    ])],
+                ],
+                &vec![Pattern::StructuredBinding(vec![
+                    Pattern::Wildcard,
+                    Pattern::Wildcard,
+                ])]
+            ),
+            false
+        );
+
+        // useful(
+        //   μ⟦ [c] ⟧,
+        //   μ⟦ [ {true, _},
+        //        {false, true},
+        //        {false, false} ] ⟧,
+        //   μ⟦ _ ⟧ ) ⇒ false
+        assert_eq!(
+            useful(
+                &vec![Rc::new(ty.clone())],
+                &vec![
+                    vec![Pattern::StructuredBinding(vec![
+                        Pattern::ConstExpression(pat::ConstExpression::True),
+                        Pattern::Wildcard,
+                    ])],
+                    vec![Pattern::StructuredBinding(vec![
+                        Pattern::ConstExpression(pat::ConstExpression::False),
+                        Pattern::ConstExpression(pat::ConstExpression::True),
+                    ])],
+                    vec![Pattern::StructuredBinding(vec![
+                        Pattern::ConstExpression(pat::ConstExpression::False),
+                        Pattern::ConstExpression(pat::ConstExpression::False),
+                    ])],
+                ],
+                &vec![Pattern::Wildcard]
+            ),
+            false
+        );
+    }
+
+    #[test]
+    fn test_useful_bools() {
+        // useful( μ⟦ [bool, bool] ⟧, μ⟦ [ true _ ] ⟧, μ⟦ false _ ⟧ ) ⇒ true
+        assert_eq!(
+            useful(
+                &vec![
+                    Rc::new(Type::Primitive(Primitive::Bool)),
+                    Rc::new(Type::Primitive(Primitive::Bool)),
+                ],
+                &vec![vec![
+                    Pattern::ConstExpression(pat::ConstExpression::True),
+                    Pattern::Wildcard
+                ]],
+                &vec![
+                    Pattern::ConstExpression(pat::ConstExpression::False),
+                    Pattern::Wildcard
+                ]
+            ),
+            true
+        );
+
+        // useful( μ⟦ [bool, bool] ⟧, μ⟦ [ true _ ] ⟧, μ⟦ true _ ⟧ ) ⇒ false
+        assert_eq!(
+            useful(
+                &vec![
+                    Rc::new(Type::Primitive(Primitive::Bool)),
+                    Rc::new(Type::Primitive(Primitive::Bool)),
+                ],
+                &vec![vec![
+                    Pattern::ConstExpression(pat::ConstExpression::True),
+                    Pattern::Wildcard
+                ]],
+                &vec![
+                    Pattern::ConstExpression(pat::ConstExpression::True),
+                    Pattern::Wildcard
+                ]
+            ),
+            false
+        );
+
+        // useful( μ⟦ [bool, bool] ⟧, μ⟦ [ true _ ] ⟧, μ⟦ false true ⟧ ) ⇒ true
+        assert_eq!(
+            useful(
+                &vec![
+                    Rc::new(Type::Primitive(Primitive::Bool)),
+                    Rc::new(Type::Primitive(Primitive::Bool)),
+                ],
+                &vec![vec![
+                    Pattern::ConstExpression(pat::ConstExpression::True),
+                    Pattern::Wildcard
+                ]],
+                &vec![
+                    Pattern::ConstExpression(pat::ConstExpression::False),
+                    Pattern::ConstExpression(pat::ConstExpression::True),
+                ]
+            ),
+            true
+        );
+
+        // useful(
+        //   μ⟦ [bool, bool] ⟧,
+        //   μ⟦ [ true _,
+        //        false true,
+        //        false false ] ⟧,
+        //   μ⟦ _ _ ⟧ ) ⇒ false
+        assert_eq!(
+            useful(
+                &vec![
+                    Rc::new(Type::Primitive(Primitive::Bool)),
+                    Rc::new(Type::Primitive(Primitive::Bool)),
+                ],
+                &vec![
+                    vec![
+                        Pattern::ConstExpression(pat::ConstExpression::True),
+                        Pattern::Wildcard,
+                    ],
+                    vec![
+                        Pattern::ConstExpression(pat::ConstExpression::False),
+                        Pattern::ConstExpression(pat::ConstExpression::True),
+                    ],
+                    vec![
+                        Pattern::ConstExpression(pat::ConstExpression::False),
+                        Pattern::ConstExpression(pat::ConstExpression::False),
+                    ],
+                ],
+                &vec![Pattern::Wildcard, Pattern::Wildcard]
+            ),
+            false
+        );
     }
 }
