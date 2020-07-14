@@ -38,6 +38,28 @@ pub fn constructor_from_pattern(p: &Pattern) -> pat::Constructor {
     }
 }
 
+impl Type {
+    /// Return a list of all this type's constructors. The behavior is undefined unless this type
+    /// is not an 'int'. Note that 'int' types have too many constructors to enumerate.
+    fn constructors(self: &Type) -> Vec<pat::Constructor> {
+        // TODO: needs test
+        match self {
+            Type::Primitive(types::Primitive::Bool) => {
+                vec![pat::Constructor::True, pat::Constructor::False]
+            }
+            Type::Primitive(types::Primitive::Int) => {
+                panic!("Cannot enumerate 'int' constructors.")
+            }
+            Type::Class(Class {
+                derived_eq: _,
+                fields,
+            }) => vec![pat::Constructor::ClassConstructor {
+                num_fields: fields.len(),
+            }],
+        }
+    }
+}
+
 /// Return the types corresponding to the result of an 's' invocation assuming 's' incoming 'p'
 /// argument has the specified 'types'.
 pub fn s_types(types: &Vec<Rc<Type>>) -> Vec<Rc<Type>> {
@@ -142,22 +164,13 @@ pub fn useful2(types: &Vec<Rc<Type>>, p: &Vec<Vec<Pattern>>, q: &Vec<Pattern>) -
                     .is_some(),
             };
 
-            // TODO: Implement 'unimplemented!' sections
-
             if complete_root_constructors {
-                match t1 {
-                    Type::Primitive(types::Primitive::Bool) => {
-                        [pat::Constructor::True, pat::Constructor::False]
-                            .iter()
-                            .find(|c_k| {
-                                useful2(&s_types(types), &s(c_k, &p), &s(c_k, &vec![q.clone()])[0])
-                            })
-                            .is_some()
-                    }
-                    Type::Class(_) => unimplemented!(),
-                    _ => panic!("Impossible!"),
-                }
+                t1.constructors()
+                    .iter()
+                    .find(|c_k| useful2(&s_types(types), &s(c_k, &p), &s(c_k, &vec![q.clone()])[0]))
+                    .is_some()
             } else {
+                // TODO: Implement
                 unimplemented!()
             }
         }
