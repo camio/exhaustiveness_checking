@@ -1,11 +1,18 @@
+//! Provide exhaustiveness checking algorithms for C++ Pattern Matching.
+//!
+//! `exhaustiveness_checking` is a crate that provides data structures and algorithms that
+//! implement algorithms for exhaustiveness checking for [Pattern
+//! Matching](http://www.open-std.org/JTC1/SC22/WG21/docs/papers/2020/p1371r2.pdf) in C++.
+
+pub mod constructor;
 pub mod contrib;
 pub mod pat;
 pub mod types;
 
 use pat::Pattern;
-use types::Class;
 use types::Primitive;
 use types::Type;
+use constructor::Constructor;
 
 use std::rc::Rc;
 
@@ -17,50 +24,10 @@ use std::rc::Rc;
 //   destructured. This could be described as an earlier pass of the pattern. I suppose we could
 //   leave Other after that pass.
 
-pub fn constructor_from_const_expression(ce: &pat::ConstExpression) -> pat::Constructor {
-    match ce {
-        pat::ConstExpression::True => pat::Constructor::True,
-        pat::ConstExpression::False => pat::Constructor::False,
-        pat::ConstExpression::Num(n) => pat::Constructor::Num(*n),
-        pat::ConstExpression::Other => {
-            panic!("Cannot convert \"other\" expression to pat::Constructor")
-        }
-    }
-}
 
-pub fn constructor_from_pattern(p: &Pattern) -> pat::Constructor {
-    match p {
-        Pattern::StructuredBinding(pats) => pat::Constructor::ClassConstructor {
-            num_fields: pats.len(),
-        },
-        Pattern::ConstExpression(ce) => constructor_from_const_expression(ce),
-        Pattern::Wildcard => panic!("Cannot convert wildcard to constructor"),
-    }
-}
-
-impl Type {
-    /// Return a list of all this type's constructors. The behavior is undefined unless this type
-    /// is not an 'int'. Note that 'int' types have too many constructors to enumerate.
-    fn constructors(self: &Type) -> Vec<pat::Constructor> {
-        // TODO: needs test
-        match self {
-            Type::Primitive(Primitive::Bool) => {
-                vec![pat::Constructor::True, pat::Constructor::False]
-            }
-            Type::Primitive(Primitive::Int) => panic!("Cannot enumerate 'int' constructors."),
-            Type::Class(Class {
-                derived_eq: _,
-                fields,
-            }) => vec![pat::Constructor::ClassConstructor {
-                num_fields: fields.len(),
-            }],
-        }
-    }
-}
-
-/// Return the types corresponding to the result of an 's' invocation assuming 's' incoming 'p'
-/// argument has the specified 'types'.
-pub fn s_types(types: &Vec<Rc<Type>>) -> Vec<Rc<Type>> {
+/// Return the types corresponding to the result of an `s` invocation assuming `s` incoming `p`
+/// argument has the specified `types`.
+fn s_types(types: &Vec<Rc<Type>>) -> Vec<Rc<Type>> {
     // TODO: At some point decide if '!types.is_empty()' should be a precondition. If so, it would
     // also be a precondition for 's'.
     if types.is_empty() {
@@ -80,7 +47,7 @@ pub fn s_types(types: &Vec<Rc<Type>>) -> Vec<Rc<Type>> {
     }
 }
 
-pub fn s(c: &pat::Constructor, p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
+fn s(c: &Constructor, p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
     let mut result: Vec<Vec<Pattern>> = Vec::new();
 
     for p_i in p {
@@ -88,7 +55,7 @@ pub fn s(c: &pat::Constructor, p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
         match p_i_1 {
             // constexpr constructed pattern
             Pattern::ConstExpression(const_expr) => {
-                if constructor_from_const_expression(const_expr) == *c {
+                if constructor::constructor_from_const_expression(const_expr) == *c {
                     result.push(p_i[1..].to_vec())
                 } else {
                     // If the constexpr value doesn't match the constructor 'c' then don't add a
@@ -108,7 +75,7 @@ pub fn s(c: &pat::Constructor, p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
 
             Pattern::Wildcard => match c {
                 // Wildcard pattern with strutured binding gets _'s followed by p_i_2 to p_i_n
-                pat::Constructor::ClassConstructor { num_fields } => {
+                Constructor::ClassConstructor { num_fields } => {
                     let mut row: Vec<Pattern> = Vec::new();
                     row.extend(
                         std::iter::repeat(&Pattern::Wildcard)
@@ -125,10 +92,11 @@ pub fn s(c: &pat::Constructor, p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
     return result;
 }
 
-pub fn d_types(types: &Vec<Rc<Type>>) -> Vec<Rc<Type>> {
+fn d_types(types: &Vec<Rc<Type>>) -> Vec<Rc<Type>> {
     types[1..].to_vec()
 }
-pub fn d(p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
+
+fn d(p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
     let mut result = Vec::new();
     for p_i in p {
         let p_i_1 = &p_i[0];
@@ -145,11 +113,14 @@ pub fn d(p: &Vec<Vec<Pattern>>) -> Vec<Vec<Pattern>> {
     result
 }
 
-/// Return 'true' if there exists a sequence of values with the specified `types` that the
-/// specified 'q' pattern sequence matches that is not matched by one of he pattern sequences in he
-/// specified 'p' and 'false' otherwise. The behavior is undefined unless 'pat_contributes(pat) =
-/// true' for all patterns 'pat' within 'p'. The behavior is also undefined unless
-/// 'pat_contributes(q) = true'.
+/// Determine whether or not a single pattern matches values that a collection of patterns does
+/// not.
+///
+/// Return `true` if there exists a sequence of values with the specified `types` that the
+/// specified `q` pattern sequence matches that is not matched by one of he pattern sequences in the
+/// specified `p` and `false` otherwise. The behavior is undefined unless `pat_contributes(pat) =
+/// true` for all patterns `pat` within `p`. The behavior is also undefined unless
+/// `pat_contributes(q) = true`.
 pub fn useful(types: &Vec<Rc<Type>>, p: &Vec<Vec<Pattern>>, q: &Vec<Pattern>) -> bool {
     // TODO: Determine if this can be elegantly extended to handle non-contributing patterns.
     // TODO: Investigate if the arguments to this function would more appropriately be slices.
@@ -198,14 +169,17 @@ pub fn useful(types: &Vec<Rc<Type>>, p: &Vec<Vec<Pattern>>, q: &Vec<Pattern>) ->
 
         // All other patterns are constructed patterns.
         constructed_pattern => {
-            let c = constructor_from_pattern(constructed_pattern);
+            let c = constructor::constructor_from_pattern(constructed_pattern);
             useful(&s_types(types), &s(&c, &p), &s(&c, &vec![q.clone()])[0])
         }
     }
 }
 
-/// Return 'true' if the specified 'patterns' form an exhaustive set for the specified
-/// 'pattern_type' and 'false' otherwise.
+/// Determine when a collection of patterns is exhaustive (i.e. matches all values for a particular
+/// type).
+///
+/// Return `true` if the specified `patterns` form an exhaustive set for the specified
+/// `pattern_type` and `false` otherwise.
 pub fn is_exhaustive(pattern_type: &Type, patterns: &Vec<pat::InspectArm>) -> bool {
     // TODO: write some tests for this
     !useful(
@@ -222,6 +196,7 @@ pub fn is_exhaustive(pattern_type: &Type, patterns: &Vec<pat::InspectArm>) -> bo
 mod tests {
     use super::*;
     use std::rc::Rc;
+    use types::Class;
 
     #[test]
     fn test_s_types() {
@@ -260,7 +235,7 @@ mod tests {
     #[test]
     fn test_s() {
         assert_eq!(
-            s(&pat::Constructor::True, &Vec::new()),
+            s(&Constructor::True, &Vec::new()),
             Vec::new() as Vec<Vec<Pattern>>
         );
 
@@ -271,7 +246,7 @@ mod tests {
         // s( μ⟦ true ⟧, μ⟦ true 1 2 ⟧ ) ⇒ μ⟦ 1 2 ⟧
         assert_eq!(
             s(
-                &pat::Constructor::True,
+                &Constructor::True,
                 &vec![vec![pat_true.clone(), pat1.clone(), pat2.clone()]]
             ),
             vec![vec![pat1.clone(), pat2.clone()]]
@@ -280,7 +255,7 @@ mod tests {
         // s( μ⟦ true ⟧, μ⟦ false 1 2 ⟧ ) ⇒ μ⟦ ⟧
         assert_eq!(
             s(
-                &pat::Constructor::False,
+                &Constructor::False,
                 &vec![vec![pat_true.clone(), pat1.clone(), pat2.clone()]]
             ),
             Vec::new() as Vec<Vec<Pattern>>
@@ -289,7 +264,7 @@ mod tests {
         // s( μ⟦ true ⟧, μ⟦ _ 1 2 ⟧ ) ⇒ μ⟦ 1 2 ⟧
         assert_eq!(
             s(
-                &pat::Constructor::True,
+                &Constructor::True,
                 &vec![vec![Pattern::Wildcard, pat1.clone(), pat2.clone()]]
             ),
             vec![vec![pat1.clone(), pat2.clone()]]
@@ -298,7 +273,7 @@ mod tests {
         // s( μ⟦ {}³ ⟧, μ⟦ [1 2 _] 1 2 ⟧ ) ⇒ μ⟦ 1 2 _ 1 2 ⟧
         assert_eq!(
             s(
-                &pat::Constructor::ClassConstructor { num_fields: 3 },
+                &Constructor::ClassConstructor { num_fields: 3 },
                 &vec![vec![
                     Pattern::StructuredBinding(vec![pat1.clone(), pat2.clone(), Pattern::Wildcard]),
                     pat1.clone(),
@@ -317,7 +292,7 @@ mod tests {
         // s( μ⟦ {}³ ⟧, μ⟦ _ 1 2 ⟧ ) ⇒ μ⟦ _ _ _ 1 2 ⟧
         assert_eq!(
             s(
-                &pat::Constructor::ClassConstructor { num_fields: 3 },
+                &Constructor::ClassConstructor { num_fields: 3 },
                 &vec![vec![Pattern::Wildcard, pat1.clone(), pat2.clone()]]
             ),
             vec![vec![

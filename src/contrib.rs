@@ -1,3 +1,5 @@
+//! Provide algorithms that determine whether patterns contribute to exhaustiveness checking.
+
 use crate::pat;
 use crate::pat::Pattern;
 use crate::types::Class;

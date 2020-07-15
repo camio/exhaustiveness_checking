@@ -12,24 +12,6 @@ pub enum ConstExpression {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Constructor {
-    ClassConstructor { num_fields: usize },
-    True,
-    False,
-    Num(i32),
-}
-
-impl Constructor {
-    pub fn is_class_constructor(self: &Constructor) -> bool {
-        if let Constructor::ClassConstructor { num_fields: _ } = self {
-            true
-        } else {
-            false
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Pattern {
     Wildcard,
     ConstExpression(ConstExpression),
