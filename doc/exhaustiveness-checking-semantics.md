@@ -29,8 +29,8 @@ inspect(e) {
 }
 ```
 
-, must, for every *q*-value (*qᵢ*) of `T`, include an arm (armⱼ) that
-*q*-matches that *q*-value (*q*-match(*qᵢ*, armⱼ) = `true`). *q*-values are defined on a
+, must, for every *q*-value (*qᵢ*) of `T`, include an case (caseⱼ) that
+*q*-matches that *q*-value (*q*-match(*qᵢ*, caseⱼ) = `true`). *q*-values are defined on a
 per-type basis and the *q*-match function is defined on a per-pattern basis.
 
 ### *q*-match and guards
